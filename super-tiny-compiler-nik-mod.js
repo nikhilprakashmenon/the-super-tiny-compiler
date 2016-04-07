@@ -550,7 +550,7 @@ function parser(tokens) {
       // about it in our AST.
       token = tokens[++current];
 
-      // We create a base node with the type `CallExpression` or `Expression` depending on the type of 
+      // We create a base node with the type `CallExpression` or `BinaryExpression` depending on the type of 
       // next token
       var node;
 
@@ -567,7 +567,7 @@ function parser(tokens) {
 
 	    case 'oper':
 	        node = {
-	          type: 'Expression',
+	          type: 'BinaryExpression',
 	          operator: token.value,
 	          params: []
 	      	};
@@ -765,7 +765,7 @@ function traverser(ast, visitor) {
         traverseArray(node.params, node);
         break;
 
-      case 'Expression':
+      case 'BinaryExpression':
       	traverseArray(node.params, node);
       	break;
 
@@ -915,11 +915,11 @@ function transformer(ast) {
       parent._context.push(expression);
     },
 
-	// Next up, `Expressions`.
-    Expression: function(node, parent){
+	// Next up, `BinaryExpressions`.
+    BinaryExpression: function(node, parent){
 
       var expression = {
-      	type: 'Expression',
+      	type: 'BinaryExpression',
       	operation: {
       	  type: 'Operator',
       	  value: node.operator
@@ -927,11 +927,11 @@ function transformer(ast) {
       	arguments: []
       };
 
-      node._context = expression.arguments;
+     node._context = expression.arguments;
 
-      // Then we're going to check if the parent node is a `CallExpression`.
+      // Then we're going to check if the parent node is a `BinaryExpression`.
       // If it is not...
-      if (parent.type !== 'Expression') {
+      if (parent.type !== 'BinaryExpression') {
 
         // We're going to wrap our `CallExpression` node with an
         // `ExpressionStatement`. We do this because the top level
@@ -1001,10 +1001,11 @@ function codeGenerator(node) {
         ')'
       );
 
-    case 'Expression':
+    case 'BinaryExpression':
       return (
       	'(' +
-      	node.arguments.map(codeGenerator).join(' ' + codeGenerator(node.operation) + ' ') +
+      	node.arguments.map(codeGenerator)
+      	.join(' ' + codeGenerator(node.operation) + ' ') +
       	')'
       );
 
@@ -1045,11 +1046,33 @@ function codeGenerator(node) {
  *   4. newAst => generator   => output
  */
 
+// function compiler(input) {
+//   var tokens = tokenizer(input);
+//   var ast    = parser(tokens);
+//   var newAst = transformer(ast);
+//   var output = codeGenerator(newAst);
+
+//   // and simply return the output!
+//   return output;
+// }
+
 function compiler(input) {
+
+  console.log("Initial input: \n" + input);
+
   var tokens = tokenizer(input);
+  // console.log("Tokens: \n" + tokens);
+
   var ast    = parser(tokens);
+  console.log("ast: \n" + JSON.stringify(ast, null, '  '));
+
   var newAst = transformer(ast);
+  console.log("newAst: \n" + JSON.stringify(newAst, null, '  '));
+
   var output = codeGenerator(newAst);
+  console.log("Final Output: \n" + output);
+
+  console.log("\n =========================================================================\n");
 
   // and simply return the output!
   return output;
@@ -1063,40 +1086,52 @@ function compiler(input) {
  */
 
 // Now I'm just exporting everything...
-// module.exports = {
-//   tokenizer: tokenizer,
-//   parser: parser,
-//   transformer: transformer,
-//   codeGenerator: codeGenerator,
-//   compiler: compiler
-// };
+module.exports = {
+  tokenizer: tokenizer,
+  parser: parser,
+  transformer: transformer,
+  codeGenerator: codeGenerator,
+  compiler: compiler
+};
 
-// var input1 = '(+ 10 20)';
-// var input2 = '(* x 10)';
-var input3 = '(+ ident (/ 3 2))';
-var input4 = '(/ (* 10 2) (- 5 2))';
-// var input5 = '(* 15 (+ 20 5))';
+var expressionTest = function(){
+  var input1 = '(+ 10 20)';
+  var input2 = '(* x 10)';
+  var input3 = '(+ ident (/ 3 2))';
+  var input4 = '(/ (* 10 2) (- 5 2))';
+  var input5 = '(* 15 (+ 20 5))';
 
-var tokens1 = tokenizer(input3);
-console.log(tokens1);
+  compiler(input1);
+  compiler(input2);
+  compiler(input3);
+  compiler(input4);
+  compiler(input5);
+};
 
-var ast1 = parser(tokens1);
-console.log(JSON.stringify(ast1, null, '  '));
+expressionTest();
 
-var newAst1 = transformer(ast1);
-console.log("New ast: " + JSON.stringify(newAst1, null, '  '));
-
-var output1 = codeGenerator(newAst1);
-console.log("Output: " + output1);
-
-var tokens1 = tokenizer(input4);
-console.log(tokens1);
-
-var ast1 = parser(tokens1);
-console.log(JSON.stringify(ast1, null, '  '));
-
-var newAst1 = transformer(ast1);
-console.log("New ast: " + JSON.stringify(newAst1, null, '  '));
-
-var output1 = codeGenerator(newAst1);
-console.log("Output: " + output1);
+// var var1 = 10;
+// {
+//     "type": "Program",
+//     "body": [
+//         {
+//             "type": "VariableDeclaration",
+//             "declarations": [
+//                 {
+//                     "type": "VariableDeclarator",
+//                     "id": {
+//                         "type": "Identifier",
+//                         "name": "var1"
+//                     },
+//                     "init": {
+//                         "type": "Literal",
+//                         "value": 10,
+//                         "raw": "10"
+//                     }
+//                 }
+//             ],
+//             "kind": "var"
+//         }
+//     ],
+//     "sourceType": "script"
+// }
