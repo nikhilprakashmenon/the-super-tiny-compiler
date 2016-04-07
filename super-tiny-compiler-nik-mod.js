@@ -466,6 +466,17 @@ function tokenizer(input) {
       continue;
     }
 
+    // Check for arithmetic operators - Nikhil
+    var OPERATORS = /\+|\-|\*|\//;
+    if(OPERATORS.test(char)) {
+      tokens.push({
+      	type: 'oper',
+      	value: char
+      });
+      current++;
+      continue;
+    }
+
     // Finally if we have not matched a character by now, we're going to throw
     // an error and completely exit.
     throw new TypeError('I dont know what this character is: ' + char);
@@ -519,7 +530,16 @@ function parser(tokens) {
       };
     }
 
-    // Next we're going to look for CallExpressions. We start this off when we
+    if (token.type === 'name') {
+      current++;
+
+      return {
+      	type: 'StringLiteral',
+      	value: token.value
+      };
+    }
+
+    // Next we're going to look for CallExpressions / Expressions. We start this off when we
     // encounter an open parenthesis.
     if (
       token.type === 'paren' &&
@@ -530,14 +550,29 @@ function parser(tokens) {
       // about it in our AST.
       token = tokens[++current];
 
-      // We create a base node with the type `CallExpression`, and we're going
-      // to set the name as the current token's value since the next token after
-      // the open parenthesis is the name of the function.
-      var node = {
-        type: 'CallExpression',
-        name: token.value,
-        params: []
-      };
+      // We create a base node with the type `CallExpression` or `Expression` depending on the type of 
+      // next token
+      var node;
+
+      // We look ahead and check the type of operation (Procedure call or an expression)
+      switch(token.type){
+
+        case 'name':
+	        node = {
+	          type: 'CallExpression',
+	          name: token.value,
+	          params: []
+	      	};
+	      	break;
+
+	    case 'oper':
+	        node = {
+	          type: 'Expression',
+	          operator: token.value,
+	          params: []
+	      	};
+	      	break;
+      }
 
       // We increment `current` *again* to skip the name token.
       token = tokens[++current];
@@ -635,6 +670,56 @@ function parser(tokens) {
  * a visitor. We need to be able to call the methods on the visitor whenever we
  * encounter a node with a matching type.
  *
+
+var visitor = {
+
+    // The first visitor method accepts `NumberLiterals`
+    NumberLiteral: function(node, parent) {
+      // We'll create a new node also named `NumberLiteral` that we will push to
+      // the parent context.
+      parent._context.push({
+        type: 'NumberLiteral',
+        value: node.value
+      });
+    },
+
+    // Next up, `CallExpressions`.
+    CallExpression: function(node, parent) {
+
+      // We start creating a new node `CallExpression` with a nested
+      // `Identifier`.
+      var expression = {
+        type: 'CallExpression',
+        callee: {
+          type: 'Identifier',
+          name: node.name
+        },
+        arguments: []
+      };
+
+      // Next we're going to define a new context on the original
+      // `CallExpression` node that will reference the `expression`'s arguments
+      // so that we can push arguments.
+      node._context = expression.arguments;
+
+      // Then we're going to check if the parent node is a `CallExpression`.
+      // If it is not...
+      if (parent.type !== 'CallExpression') {
+
+        // We're going to wrap our `CallExpression` node with an
+        // `ExpressionStatement`. We do this because the top level
+        // `CallExpressions` in JavaScript are actually statements.
+        expression = {
+          type: 'ExpressionStatement',
+          expression: expression
+        };
+      }
+
+      // Last, we push our (possibly wrapped) `CallExpression` to the `parent`'s
+      // `context`.
+      parent._context.push(expression);
+    }
+  }
  */
 
 // So we define a traverser function which accepts an AST and a
@@ -680,9 +765,16 @@ function traverser(ast, visitor) {
         traverseArray(node.params, node);
         break;
 
+      case 'Expression':
+      	traverseArray(node.params, node);
+      	break;
+
       // In the case of `NumberLiterals` we don't have any child nodes to visit,
       // so we'll just break.
       case 'NumberLiteral':
+        break;
+
+      case 'StringLiteral':
         break;
 
       // And again, if we haven't recognized the node type then we'll throw an
@@ -765,7 +857,8 @@ function transformer(ast) {
   // new ast.
   ast._context = newAst.body;
 
-  var visitor = {
+  // We'll start by calling the traverser function with our ast and a visitor.
+  traverser(ast, {
 
     // The first visitor method accepts `NumberLiterals`
     NumberLiteral: function(node, parent) {
@@ -775,6 +868,14 @@ function transformer(ast) {
         type: 'NumberLiteral',
         value: node.value
       });
+    },
+
+    StringLiteral: function(node, parent) {
+      
+      parent._context.push({
+        type: 'StringLiteral',
+        value: node.value
+      });      
     },
 
     // Next up, `CallExpressions`.
@@ -812,11 +913,42 @@ function transformer(ast) {
       // Last, we push our (possibly wrapped) `CallExpression` to the `parent`'s
       // `context`.
       parent._context.push(expression);
-    }
-  };
+    },
 
-  // We'll start by calling the traverser function with our ast and a visitor.
-  traverser(ast, visitor);
+	// Next up, `Expressions`.
+    Expression: function(node, parent){
+
+      var expression = {
+      	type: 'Expression',
+      	operation: {
+      	  type: 'Operator',
+      	  value: node.operator
+      	},
+      	arguments: []
+      };
+
+      node._context = expression.arguments;
+
+      // Then we're going to check if the parent node is a `CallExpression`.
+      // If it is not...
+      if (parent.type !== 'Expression') {
+
+        // We're going to wrap our `CallExpression` node with an
+        // `ExpressionStatement`. We do this because the top level
+        // `CallExpressions` in JavaScript are actually statements.
+        expression = {
+          type: 'ExpressionStatement',
+          expression: expression
+        };
+      }
+
+      // Last, we push our (possibly wrapped) `CallExpression` to the `parent`'s
+      // `context`.
+      parent._context.push(expression);      
+
+    }
+
+  });
 
   // At the end of our transformer function we'll return the new ast that we
   // just created.
@@ -869,12 +1001,25 @@ function codeGenerator(node) {
         ')'
       );
 
+    case 'Expression':
+      return (
+      	'(' +
+      	node.arguments.map(codeGenerator).join(' ' + codeGenerator(node.operation) + ' ') +
+      	')'
+      );
+
     // For `Identifiers` we'll just return the `node`'s name.
     case 'Identifier':
       return node.name;
 
     // For `NumberLiterals` we'll just return the `node`'s value.
     case 'NumberLiteral':
+      return node.value;
+
+	case 'StringLiteral':
+	  return node.value;  
+
+    case 'Operator':
       return node.value;
 
     // And if we haven't recognized the node, we'll throw an error.
@@ -918,35 +1063,40 @@ function compiler(input) {
  */
 
 // Now I'm just exporting everything...
-module.exports = {
-  tokenizer: tokenizer,
-  parser: parser,
-  transformer: transformer,
-  codeGenerator: codeGenerator,
-  compiler: compiler
-};
-
-
-// var testast = {
-//   type: 'Program',
-//   body: [{
-//     type: 'CallExpression',
-//     name: 'add',
-//     params: [{
-//       type: 'NumberLiteral',
-//       value: '2'
-//     }, {
-//       type: 'CallExpression',
-//       name: 'subtract',
-//       params: [{
-//         type: 'NumberLiteral',
-//         value: '4'
-//       }, {
-//         type: 'NumberLiteral',
-//         value: '2'
-//       }]
-//     }]
-//   }]
+// module.exports = {
+//   tokenizer: tokenizer,
+//   parser: parser,
+//   transformer: transformer,
+//   codeGenerator: codeGenerator,
+//   compiler: compiler
 // };
 
-// transformer(testast);
+// var input1 = '(+ 10 20)';
+// var input2 = '(* x 10)';
+var input3 = '(+ ident (/ 3 2))';
+var input4 = '(/ (* 10 2) (- 5 2))';
+// var input5 = '(* 15 (+ 20 5))';
+
+var tokens1 = tokenizer(input3);
+console.log(tokens1);
+
+var ast1 = parser(tokens1);
+console.log(JSON.stringify(ast1, null, '  '));
+
+var newAst1 = transformer(ast1);
+console.log("New ast: " + JSON.stringify(newAst1, null, '  '));
+
+var output1 = codeGenerator(newAst1);
+console.log("Output: " + output1);
+
+var tokens1 = tokenizer(input4);
+console.log(tokens1);
+
+var ast1 = parser(tokens1);
+console.log(JSON.stringify(ast1, null, '  '));
+
+var newAst1 = transformer(ast1);
+console.log("New ast: " + JSON.stringify(newAst1, null, '  '));
+
+var output1 = codeGenerator(newAst1);
+console.log("Output: " + output1);

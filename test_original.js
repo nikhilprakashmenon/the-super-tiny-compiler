@@ -1,4 +1,4 @@
-var superTinyCompiler = require('./super-tiny-compiler-nik-mod');
+var superTinyCompiler = require('./super-tiny-compiler');
 var assert            = require('assert');
 
 var tokenizer     = superTinyCompiler.tokenizer;
@@ -9,9 +9,6 @@ var compiler      = superTinyCompiler.compiler;
 
 var input  = '(add 2 (subtract 4 2))';
 var output = 'add(2, subtract(4, 2));';
-
-var input1 = '(/ (* 10 2) (- 5 2))';
-var output1 = '((10 * 2) / (5 - 2))';
 
 var tokens = [
   { type: 'paren',  value: '('        },
@@ -24,23 +21,6 @@ var tokens = [
   { type: 'paren',  value: ')'        },
   { type: 'paren',  value: ')'        }
 ];
-
-var tokens1 = [ 
-  { type: 'paren',  value: '('        },
-  { type: 'oper',   value: '/'        },
-  { type: 'paren',  value: '('        },
-  { type: 'oper',   value: '*'        },
-  { type: 'number', value: '10'       },
-  { type: 'number', value: '2'        },
-  { type: 'paren',  value: ')'        },
-  { type: 'paren',  value: '('        },
-  { type: 'oper',   value: '-'        },
-  { type: 'number', value: '5'        },
-  { type: 'number', value: '2'        },
-  { type: 'paren',  value: ')'        },
-  { type: 'paren',  value: ')'        } 
-];
-
 
 var ast = {
   type: 'Program',
@@ -62,46 +42,6 @@ var ast = {
       }]
     }]
   }]
-};
-
-var ast1 = {
-  type: "Program",
-  body: [
-    {
-      "type": "Expression",
-      "operator": "/",
-      "params": [
-        {
-          "type": "Expression",
-          "operator": "*",
-          "params": [
-            {
-              "type": "NumberLiteral",
-              "value": "10"
-            },
-            {
-              "type": "NumberLiteral",
-              "value": "2"
-            }
-          ]
-        },
-        {
-          "type": "Expression",
-          "operator": "-",
-          "params": [
-            {
-              "type": "NumberLiteral",
-              "value": "5"
-            },
-            {
-              "type": "NumberLiteral",
-              "value": "2"
-            }
-          ]
-        }
-      ]
-    }
-  ]
 };
 
 var newAst = {
