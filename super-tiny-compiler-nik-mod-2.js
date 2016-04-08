@@ -596,6 +596,8 @@ function parser(tokens) {
 	      break;
 
 	    case 'oper':
+	    
+	    case 'condoper':
 	      node = {
 	        type: 'BinaryExpression',
 	        operator: token.value,
@@ -609,13 +611,15 @@ function parser(tokens) {
 
    		    'defvar' : {
 	          type: 'VariableDeclarator',
-	          name: token.value,
+	          name: tokens[current+1].value,
 	          params: []
    		    },
 
    		    'if' : {
    		      type: 'IfStatement',
-   		      params: []
+   		      test: [],
+   		      conseq: [],
+   		      alt: [],
    		    },
 
       	  };
@@ -625,8 +629,10 @@ function parser(tokens) {
 	      break;
       }
 
-      // We increment `current` *again* to skip the name token.
-      token = tokens[++current];
+      // We increment `current` *again* to skip the name token only when the type is not an if statement
+      // to handle conditional operator.
+      if(node.type !== 'IfStatement')
+     	 token = tokens[++current];
 
       // And now we want to loop through each token that will be the `params` of
       // our `CallExpression` until we encounter a closing parenthesis.
@@ -668,7 +674,19 @@ function parser(tokens) {
       ) {
         // we'll call the `walk` function which will return a `node` and we'll
         // push it into our `node.params`.
-        node.params.push(walk());
+        
+
+        if(node.type === 'IfStatement') {
+
+          node.test.push(walk());
+          node.conseq.push(walk());
+          node.alt.push(walk());
+
+        }
+        else{
+		  node.params.push(walk());
+        }
+
         token = tokens[current];
       }
 
@@ -1207,8 +1225,8 @@ var expressionTest = function(debugFlag) {
 
 var variableDeclarationTest = function(debugFlag) {
   
-  var input1 = '(defvar iden string)';
-  var input2 = '(defvar iden (+ ident (* 50 100)))';
+  var input1 = '(defvar str string)';
+  var input2 = '(defvar x (+ ident (* 50 100)))';
   var input3 = '(defvar iden (/ 100 2))';
 
   compiler(input1, debugFlag);
@@ -1217,7 +1235,7 @@ var variableDeclarationTest = function(debugFlag) {
 }
 
 
-// expressionTest(true);
+// expressionTest(false);
 // variableDeclarationTest(false);
 
 
