@@ -1,4 +1,4 @@
-/**
+ /**
  * TTTTTTTTTTTTTTTTTTTTTTTHHHHHHHHH     HHHHHHHHHEEEEEEEEEEEEEEEEEEEEEE
  * T:::::::::::::::::::::TH:::::::H     H:::::::HE::::::::::::::::::::E
  * T:::::::::::::::::::::TH:::::::H     H:::::::HE::::::::::::::::::::E
@@ -428,6 +428,7 @@ function tokenizer(input) {
         char = input[++current];
       }
 
+
       // After that we push our `number` token to the `tokens` array.
       tokens.push({
         type: 'number',
@@ -457,6 +458,19 @@ function tokenizer(input) {
         char = input[++current];
       }
 
+      var keywords = ['defvar', 'if', 'define', 'write-line'];
+
+      // check for keyword
+      if (keywords.indexOf(value)  
+      	in keywords) {
+
+      	tokens.push({
+          type: 'keyword',
+          value: value
+      });
+        continue;
+      }
+
       // And pushing that value as a token with the type `name` and continuing.
       tokens.push({
         type: 'name',
@@ -466,12 +480,23 @@ function tokenizer(input) {
       continue;
     }
 
-    // Check for arithmetic operators - Nikhil
+    // Check for arithmetic operators 
     var OPERATORS = /\+|\-|\*|\//;
     if(OPERATORS.test(char)) {
       tokens.push({
       	type: 'oper',
       	value: char
+      });
+      current++;
+      continue;
+    }
+
+    // Check for conditional operators
+    var CONDOPERATORS = /^<$|^>$|^=$/;
+    if(CONDOPERATORS.test(char)) {
+      tokens.push({
+        type: 'condoper',
+        value: char
       });
       current++;
       continue;
@@ -509,7 +534,7 @@ function parser(tokens) {
   // But this time we're going to use recursion instead of a `while` loop. So we
   // define a `walk` function.
   function walk() {
-
+  	
     // Inside the walk function we start by grabbing the `current` token.
     var token = tokens[current];
 
@@ -558,24 +583,51 @@ function parser(tokens) {
       switch(token.type){
 
         case 'name':
-	        node = {
-	          type: 'CallExpression',
-	          name: token.value,
-	          params: []
-	      	};
-	      	break;
+	      node = {
+	        type: 'CallExpression',
+	        name: token.value,
+	        params: []
+	      };
+	      break;
 
 	    case 'oper':
-	        node = {
-	          type: 'BinaryExpression',
-	          operator: token.value,
+	    
+	    case 'condoper':
+	      node = {
+	        type: 'BinaryExpression',
+	        operator: token.value,
+	        params: []
+	      };
+	      break;
+
+      	case 'keyword': 
+
+      	  var keywordStruct = {
+
+   		    'defvar' : {
+	          type: 'VariableDeclarator',
+	          name: tokens[current+1].value,
 	          params: []
-	      	};
-	      	break;
+   		    },
+
+   		    'if' : {
+   		      type: 'IfStatement',
+   		      test: [],
+   		      conseq: [],
+   		      alt: [],
+   		    },
+
+      	  };
+
+      	  node = keywordStruct[token.value];
+      	  token = tokens[++current];		  
+	      break;
       }
 
-      // We increment `current` *again* to skip the name token.
-      token = tokens[++current];
+      // We increment `current` *again* to skip the name token only when the type is not an if statement
+      // to handle conditional operator.
+      if(node.type !== 'IfStatement')
+     	 token = tokens[++current];
 
       // And now we want to loop through each token that will be the `params` of
       // our `CallExpression` until we encounter a closing parenthesis.
@@ -617,7 +669,19 @@ function parser(tokens) {
       ) {
         // we'll call the `walk` function which will return a `node` and we'll
         // push it into our `node.params`.
-        node.params.push(walk());
+        
+
+        if(node.type === 'IfStatement') {
+
+          node.test.push(walk());
+          node.conseq.push(walk());
+          node.alt.push(walk());
+
+        }
+        else{
+		  node.params.push(walk());
+        }
+
         token = tokens[current];
       }
 
@@ -631,7 +695,7 @@ function parser(tokens) {
 
     // Again, if we haven't recognized the token type by now we're going to
     // throw an error.
-    throw new TypeError(token.type);
+    throw new TypeError("Error: " + token.type );
   }
 
   // Now, we're going to create our AST which will have a root which is a
@@ -676,7 +740,7 @@ var visitor = {
     // The first visitor method accepts `NumberLiterals`
     NumberLiteral: function(node, parent) {
       // We'll create a new node also named `NumberLiteral` that we will push to
-      // the parent context.
+      // the parent context.parent._context.push(declaration);
       parent._context.push({
         type: 'NumberLiteral',
         value: node.value
@@ -769,6 +833,16 @@ function traverser(ast, visitor) {
       	traverseArray(node.params, node);
       	break;
 
+      case 'VariableDeclarator':
+        traverseArray(node.params, node);
+        break;
+
+      case 'IfStatement':
+        traverseArray(node.test, node);     
+        traverseArray(node.conseq, node);        
+        traverseArray(node.alt, node);
+        break;
+
       // In the case of `NumberLiterals` we don't have any child nodes to visit,
       // so we'll just break.
       case 'NumberLiteral':
@@ -840,7 +914,6 @@ function traverser(ast, visitor) {
 // So we have our transformer function which will accept the lisp ast.
 function transformer(ast) {
 
-  debugger;
   // We'll create a `newAst` which like our previous AST will have a program
   // node.
   var newAst = {
@@ -922,16 +995,18 @@ function transformer(ast) {
       	type: 'BinaryExpression',
       	operation: {
       	  type: 'Operator',
-      	  value: node.operator
+      	  value: (node.operator == '=') ? '==' : node.operator
       	},
       	arguments: []
       };
 
-     node._context = expression.arguments;
+      node._context = expression.arguments;
 
       // Then we're going to check if the parent node is a `BinaryExpression`.
       // If it is not...
-      if (parent.type !== 'BinaryExpression') {
+      if (parent.type !== 'BinaryExpression' 
+      	&& parent.type !== 'VariableDeclarator'
+      	&& parent.type !== 'IfStatement') {
 
         // We're going to wrap our `CallExpression` node with an
         // `ExpressionStatement`. We do this because the top level
@@ -944,9 +1019,63 @@ function transformer(ast) {
 
       // Last, we push our (possibly wrapped) `CallExpression` to the `parent`'s
       // `context`.
-      parent._context.push(expression);      
+      parent._context.push(expression);   
+    },
 
-    }
+    IfStatement: function(node, parent) {
+
+      var statement = {
+
+  	    type: 'IfStatement',
+  	    body: []
+      };
+
+      node._context = statement.body;
+
+      if (parent.type !== 'IfStatement') {
+
+        // We're going to wrap our `CallExpression` node with an
+        // `ExpressionStatement`. We do this because the top level
+        // `CallExpressions` in JavaScript are actually statements.
+        statement = {
+          type: 'ExpressionStatement',
+          expression: statement
+        };
+      }
+
+      parent._context.push(statement);
+    },
+
+    VariableDeclarator: function(node, parent) {
+
+      var declaration = {
+        type: 'VariableDeclarator',
+        id: {
+          type: 'Identifier',
+          name: node.name
+        },
+        init: []
+      };
+
+      node._context = declaration.init;
+
+      // Then we're going to check if the parent node is a `BinaryExpression`.
+      // If it is not...
+      if (parent.type !== 'VariableDeclarator') {
+
+        // We're going to wrap our `CallExpression` node with an
+        // `ExpressionStatement`. We do this because the top level
+        // `CallExpressions` in JavaScript are actually statements.
+        declaration = {
+          type: 'ExpressionStatement',
+          expression: declaration
+        };
+      }
+
+      // Last, we push our (possibly wrapped) `CallExpression` to the `parent`'s
+      // `context`.
+      parent._context.push(declaration);
+    },
 
   });
 
@@ -1009,6 +1138,29 @@ function codeGenerator(node) {
       	')'
       );
 
+    case 'VariableDeclarator':
+      var result = '';
+      var value = node.init[0];
+      if(value.type == 'StringLiteral')
+      	result += "char *" + codeGenerator(node.id) + " = \"" + codeGenerator(value) + "\"";
+      else
+       	result += "int " + codeGenerator(node.id) + " = " + codeGenerator(value);
+      return result;
+
+
+    case 'IfStatement':
+      var elseCase ='';
+      var ifCase = ''
+      // If there is an else case
+      if(node.body[2]) {
+      	elseCase += '\nelse {\n var b = ' + codeGenerator(node.body[2]) + ';\n}';
+      }
+
+      ifCase += 'if ' + codeGenerator(node.body[0]) + ' {\n var a = ' + 
+		 codeGenerator(node.body[1]) + ';\n}' + elseCase;
+
+	  return ifCase;
+
     // For `Identifiers` we'll just return the `node`'s name.
     case 'Identifier':
       return node.name;
@@ -1056,23 +1208,33 @@ function codeGenerator(node) {
 //   return output;
 // }
 
-function compiler(input) {
+function compiler(input, options) {
 
-  console.log("Initial input: \n" + input);
+  console.log("Initial input: \n" + input + "\n");
 
-  var tokens = tokenizer(input);
-  // console.log("Tokens: \n" + tokens);
+  var tokens, ast, newAst, output;
 
-  var ast    = parser(tokens);
-  console.log("ast: \n" + JSON.stringify(ast, null, '  '));
+  if(options.debug) {
+    var tokens = tokenizer(input);
+    console.log("Tokens: \n" + JSON.stringify(tokens, null, '  ') + "\n");
 
-  var newAst = transformer(ast);
-  console.log("newAst: \n" + JSON.stringify(newAst, null, '  '));
+    var ast    = parser(tokens);
+    console.log("AST: \n" + JSON.stringify(ast, null, '  ') + "\n");
 
-  var output = codeGenerator(newAst);
+    var newAst = transformer(ast);
+	console.log("NEWAST: \n" + JSON.stringify(newAst, null, '  ') + "\n");
+
+    var output = codeGenerator(newAst);
+  }
+  else {
+    tokens = tokenizer(input);
+    ast    = parser(tokens);
+    newAst = transformer(ast);
+    output = codeGenerator(newAst);
+  }
+
   console.log("Final Output: \n" + output);
-
-  console.log("\n =========================================================================\n");
+  console.log("\n=========================================================================\n");
 
   // and simply return the output!
   return output;
@@ -1081,7 +1243,7 @@ function compiler(input) {
 /**
  * ============================================================================
  *                                   (๑˃̵ᴗ˂̵)و
- * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!YOU MADE IT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+ * !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!YOU MADE IT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!VariableDeclarator
  * ============================================================================
  */
 
@@ -1093,45 +1255,3 @@ module.exports = {
   codeGenerator: codeGenerator,
   compiler: compiler
 };
-
-var expressionTest = function(){
-  var input1 = '(+ 10 20)';
-  var input2 = '(* x 10)';
-  var input3 = '(+ ident (/ 3 2))';
-  var input4 = '(/ (* 10 2) (- 5 2))';
-  var input5 = '(* 15 (+ 20 5))';
-
-  compiler(input1);
-  compiler(input2);
-  compiler(input3);
-  compiler(input4);
-  compiler(input5);
-};
-
-expressionTest();
-
-// var var1 = 10;
-// {
-//     "type": "Program",
-//     "body": [
-//         {
-//             "type": "VariableDeclaration",
-//             "declarations": [
-//                 {
-//                     "type": "VariableDeclarator",
-//                     "id": {
-//                         "type": "Identifier",
-//                         "name": "var1"
-//                     },
-//                     "init": {
-//                         "type": "Literal",
-//                         "value": 10,
-//                         "raw": "10"
-//                     }
-//                 }
-//             ],
-//             "kind": "var"
-//         }
-//     ],
-//     "sourceType": "script"
-// }
