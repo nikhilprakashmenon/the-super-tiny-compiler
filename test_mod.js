@@ -1,4 +1,4 @@
-var superTinyCompiler = require('./super-tiny-compiler-nik-mod-2');
+var superTinyCompiler = require('./super-tiny-compiler-mod');
 
 var tokenizer     = superTinyCompiler.tokenizer;
 var parser        = superTinyCompiler.parser;
@@ -53,6 +53,6 @@ var IfStatementtest = function(debugFlag) {
 
 var options = { debug: false};
 
-// expressionTest(options);
-// variableDeclarationTest(options);
+expressionTest(options);
+variableDeclarationTest(options);
 IfStatementtest(options);
